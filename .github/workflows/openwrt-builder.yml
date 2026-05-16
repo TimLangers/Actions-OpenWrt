@@ -10,6 +10,10 @@ name: OpenWrt 云编译
 on:
   repository_dispatch:
   workflow_dispatch:
+  # === 新增内容开始：每2天运行一次（cron: 每2天的0点）===
+  schedule:
+    - cron: '0 0 */2 * *'
+  # === 新增内容结束 ===
 
 # 授予工作流写入权限（创建 Release 必需）
 permissions:
@@ -145,3 +149,52 @@ jobs:
         delete_tags: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # === 新增内容开始：Telegram 通知（无论成功失败均发送）===
+    - name: 16. 发送 Telegram 通知
+      if: always()   # 确保编译成功或失败都执行
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        # 判断编译是否成功（根据步骤9的输出）
+        if [ "${{ steps.compile.outcome }}" == "success" ]; then
+          STATUS="✅ 编译成功"
+        else
+          STATUS="❌ 编译失败"
+        fi
+
+        # 获取固件名称（如果有）
+        if [ -f openwrt/DEVICE_NAME ] && [ -s openwrt/DEVICE_NAME ]; then
+          DEVICE=$(cat openwrt/DEVICE_NAME)
+        else
+          DEVICE="未知设备"
+        fi
+
+        # 获取 Release 下载地址（如果成功上传）
+        RELEASE_URL=""
+        if [ "${{ steps.tag.outputs.status }}" == "success" ]; then
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.release_tag }}"
+        fi
+
+        # 构建消息内容
+        MESSAGE="📢 *OpenWrt 云编译通知*
+        ⏰ 时间：$(date '+%Y-%m-%d %H:%M:%S')
+        🔧 状态：${STATUS}
+        📟 设备：${DEVICE}
+        📦 仓库：${{ github.repository }}
+        🔗 运行链接：${RUN_URL}"
+
+        if [ -n "$RELEASE_URL" ]; then
+          MESSAGE="${MESSAGE}
+        📥 发布页面：${RELEASE_URL}"
+        fi
+
+        # 发送 Telegram 消息（使用 curl，无需 Docker）
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="${MESSAGE}" \
+          -d parse_mode="Markdown" \
+          -d disable_web_page_preview="true"
+    # === 新增内容结束 ===
