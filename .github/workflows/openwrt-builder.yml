@@ -1,23 +1,10 @@
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-#
-# File: .github/workflows/openwrt-builder.yml
-# Description: Build OpenWrt using GitHub Actions
-#
-
-name: OpenWrt 云编译
+name: 编译 OpenWrt 最新版固件
 
 on:
-  repository_dispatch:
   workflow_dispatch:
-  # === 新增内容开始：每2天运行一次（cron: 每2天的0点）===
+  repository_dispatch:
   schedule:
-    - cron: '0 0 */2 * *'
-  # === 新增内容结束 ===
-
-# 授予工作流写入权限（创建 Release 必需）
-permissions:
-  contents: write
+    - cron: '0 12 * * *'   # UTC 12:00 = 北京时间 20:00
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
@@ -26,9 +13,6 @@ env:
   CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -36,165 +20,215 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 1. 检出代码
-      uses: actions/checkout@main
+    - name: 1️⃣ 拉取当前源码仓库
+      uses: actions/checkout@v4
 
-    - name: 2. 初始化编译环境
+    - name: ⏰ 准备编译时间标记
+      run: |
+        echo "FILE_DATE=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
+
+    - name: 2️⃣ 清理磁盘并安装依赖
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
-        sudo apt-get update
-        sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo apt-get autoremove -y --purge
-        sudo apt-get clean
-        sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
+        sudo rm -rf /etc/apt/sources.list.d/*
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/share/powershell
+        sudo rm -rf /usr/share/swift
 
-    - name: 3. 克隆源码
+        sudo -E apt-get -qq update
+
+        sudo -E apt-get -qq install -y \
+          build-essential clang flex bison g++ gawk gcc-multilib \
+          g++-multilib gettext git libncurses-dev libssl-dev \
+          python3-distutils rsync unzip zlib1g-dev file qemu-utils \
+          upx-ucl fastjar libelf-dev swig python3-setuptools \
+          python3-pyelftools zstd jq libcap-dev binutils-dev
+
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+
+        sudo timedatectl set-timezone "$TZ"
+
+        sudo mkdir -p /workdir
+        sudo chown $USER:$USER /workdir
+
+    - name: 2️⃣.1️⃣ 创建 6GB Swap 交换分区
+      run: |
+        sudo swapoff -a || true
+        sudo rm -f /swapfile || true
+
+        sudo fallocate -l 6G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+
+        echo "Swap 创建完成，当前状态："
+        free -h
+
+    - name: 3️⃣ 收集服务器信息
+      run: |
+        echo "==================== 服务器配置信息 ===================="
+        echo "CPU 型号: $(cat /proc/cpuinfo | grep 'model name' | head -1 | cut -f2 -d: | sed 's/^[ \t]*//')"
+        echo "CPU 核心数: $(nproc)"
+        echo "==================== 内存信息 ===================="
+        free -h
+        echo "==================== 磁盘信息 ===================="
+        df -h
+
+    - name: 4️⃣ 拉取 OpenWrt main 分支源码
       working-directory: /workdir
       run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        git clone --depth 1 -b $REPO_BRANCH $REPO_URL openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        echo "OpenWrt 源码拉取完成"
 
-    - name: 4. 加载自定义 feeds (diy-part1)
+    - name: ⚡ 启用 DL 目录编译缓存（使用 hashFiles 控制缓存更新）
+      uses: actions/cache@v4
+      with:
+        path: openwrt/dl
+        key: ${{ runner.os }}-openwrt-dl-${{ hashFiles('feeds.conf.default', '.config', 'diy-part1.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-dl-
+
+    - name: 5️⃣ 执行 diy-part1.sh (自定义包和调整)
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: 5. 更新 feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: 6. 安装 feeds
-      run: cd openwrt && ./scripts/feeds install -a
-
-    - name: 7. 加载自定义配置 (diy-part2)
+    - name: 6️⃣ 更新并安装 Feeds
       run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        echo "Feeds 更新和安装完成"
+
+    - name: 6️⃣.1️⃣ 修复第三方 Golang 包路径
+      run: |
+        cd openwrt
+        find package -name Makefile | xargs sed -i \
+          's#../../lang/golang/#$(TOPDIR)/feeds/packages/lang/golang/#g'
+        echo "Golang 包路径修复完成"
+
+    - name: 7️⃣ 执行 diy-part2.sh (配置和优化)
+      run: |
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 8. 下载软件包
-      id: package
+    - name: 8️⃣ 生成默认配置并下载编译依赖
       run: |
         cd openwrt
         make defconfig
-        make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
+        make download -j16 V=s || make download -j8 V=s || make download -j4 V=s
+        echo "编译依赖下载完成"
 
-    - name: 9. 编译固件
-      id: compile
+    - name: 9️⃣ 开始编译固件
       run: |
         cd openwrt
-        echo -e "$(nproc) 线程 开始编译"
-        make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "开始编译，使用 2 个并发线程..."
+        make -j2 V=s || {
+          echo "2 线程编译失败，降级为 1 线程重试..."
+          make -j1 V=s
+        }
+        echo "编译完成！"
 
-    - name: 10. 整理固件文件
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+    - name: 🔟 整理编译产物固件
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        mkdir -p $GITHUB_WORKSPACE/firmware
+        
+        # 收集所有编译产物
+        find openwrt/bin/targets/ -type f \
+        \( -name "*.img.gz" -o -name "*.vmdk" -o -name "*.qcow2" \
+           -o -name "*.manifest" -o -name "*.bin" -o -name "*.squashfs" \) \
+        -exec cp {} $GITHUB_WORKSPACE/firmware/ \;
+        
+        # 统计固件数量
+        FIRMWARE_COUNT=$(ls -1 $GITHUB_WORKSPACE/firmware/ | wc -l)
+        echo "固件数量: $FIRMWARE_COUNT"
+        echo "FIRMWARE=$GITHUB_WORKSPACE/firmware" >> $GITHUB_ENV
+        ls -lh $GITHUB_WORKSPACE/firmware/
 
-    - name: 11. 上传固件到 Artifacts (Action页面)
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+    - name: 1️⃣1️⃣ 上传固件至 Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_firmware_${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
+        retention-days: 30
 
-    - name: 12. 生成发布标签 (Releases)
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        echo "🚀 固件编译自：$(date +"%Y-%m-%d %H:%M")" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: 13. 上传固件到 Releases
-      uses: softprops/action-gh-release@master
-      if: steps.tag.outputs.status == 'success' && !cancelled()
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: 1️⃣2️⃣ 发布到 GitHub Releases
+      uses: softprops/action-gh-release@v2
+      if: success()
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
+        tag_name: OpenWrt_${{ env.FILE_DATE }}
         files: ${{ env.FIRMWARE }}/*
+        body: |
+          🚀 **OpenWrt Main 分支固件自动编译**
 
-    - name: 14. 删除旧的运行记录
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 0
-        keep_minimum_runs: 2
+          📅 **编译时间**: ${{ env.FILE_DATE }}
+          🌿 **编译分支**: main
+          🔥 **集成核心**:
+          - sing-box 1.12.5 (full 版)
+          - Argon 主题 + 配置插件
+          - Tailscale 支持
+          - PassWall + OpenClash 双科学上网
+          - TurboACC 加速
 
-    - name: 15. 删除旧版 Releases
-      uses: dev-drprasad/delete-older-releases@master
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      with:
-        keep_latest: 3
-        delete_tags: true
+          🌐 **默认配置**:
+          - **LAN IP**: 10.1.1.1/24
+          - **默认用户名**: root
+          - **默认密码**: (无密码)
+
+          📦 **下载方式**:
+          点击上方 Assets 下载固件文件
+
+          ⚠️ **使用注意**:
+          1. 首次刷入建议先备份当前配置
+          2. 重要文件建议在刷入前导出
+          3. 如遇启动问题，可进恢复模式重置
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # === 新增内容开始：Telegram 通知（无论成功失败均发送）===
-    - name: 16. 发送 Telegram 通知
-      if: always()   # 确保编译成功或失败都执行
+    # -------------------- 修复红色波纹线：改用变量拼接消息 --------------------
+    - name: 1️⃣3️⃣ 发送编译结果通知 (Telegram)
+      if: always()
       env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_TO }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
-        # 判断编译是否成功（根据步骤9的输出）
-        if [ "${{ steps.compile.outcome }}" == "success" ]; then
+        if [ "${{ job.status }}" = "success" ]; then
           STATUS="✅ 编译成功"
         else
           STATUS="❌ 编译失败"
         fi
-
-        # 获取固件名称（如果有）
-        if [ -f openwrt/DEVICE_NAME ] && [ -s openwrt/DEVICE_NAME ]; then
-          DEVICE=$(cat openwrt/DEVICE_NAME)
+        if [ -f openwrt/.config ]; then
+          DEVICE=$(grep '^CONFIG_TARGET.*DEVICE.*=y' openwrt/.config | sed -r 's/.*DEVICE_(.*)=y/\1/')
+          [ -z "$DEVICE" ] && DEVICE="未知设备"
         else
           DEVICE="未知设备"
         fi
-
-        # 获取 Release 下载地址（如果成功上传）
         RELEASE_URL=""
-        if [ "${{ steps.tag.outputs.status }}" == "success" ]; then
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.release_tag }}"
+        if [ "${{ job.status }}" = "success" ]; then
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/OpenWrt_${{ env.FILE_DATE }}"
         fi
-
-        # 构建消息内容
-        MESSAGE="📢 *OpenWrt 云编译通知*
-        ⏰ 时间：$(date '+%Y-%m-%d %H:%M:%S')
-        🔧 状态：${STATUS}
-        📟 设备：${DEVICE}
-        📦 仓库：${{ github.repository }}
-        🔗 运行链接：${RUN_URL}"
-
+        # 使用变量拼接消息，完全避免 YAML 多行字符串缩进问题
+        MESSAGE="📢 *OpenWrt 自动编译通知*\n"
+        MESSAGE="${MESSAGE}⏰ 时间：$(date '+%Y-%m-%d %H:%M:%S')\n"
+        MESSAGE="${MESSAGE}🔧 状态：${STATUS}\n"
+        MESSAGE="${MESSAGE}📟 设备：${DEVICE}\n"
+        MESSAGE="${MESSAGE}📦 仓库：${{ github.repository }}\n"
+        MESSAGE="${MESSAGE}🔗 运行链接：${RUN_URL}\n"
         if [ -n "$RELEASE_URL" ]; then
-          MESSAGE="${MESSAGE}
-        📥 发布页面：${RELEASE_URL}"
+          MESSAGE="${MESSAGE}📥 发布页面：${RELEASE_URL}\n"
         fi
-
-        # 发送 Telegram 消息（使用 curl，无需 Docker）
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           -d chat_id="${TELEGRAM_CHAT_ID}" \
           -d text="${MESSAGE}" \
           -d parse_mode="Markdown" \
           -d disable_web_page_preview="true"
-    # === 新增内容结束 ===
