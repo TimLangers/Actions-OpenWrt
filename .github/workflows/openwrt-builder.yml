@@ -174,7 +174,7 @@ jobs:
           🌿 **编译分支**: main
           🔥 **集成核心**:
           - sing-box 1.12.5 (full 版)
-          - Argon 主题 + 配置插件
+          - Argon 主题 +配置插件
           - Tailscale 支持
           - PassWall + OpenClash 双科学上网
           - TurboACC 加速
@@ -194,7 +194,6 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # -------------------- 修复红色波纹线：改用变量拼接消息 --------------------
     - name: 1️⃣3️⃣ 发送编译结果通知 (Telegram)
       if: always()
       env:
@@ -202,33 +201,50 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_TO }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
+        # 1. 精准抓取编译状态
         if [ "${{ job.status }}" = "success" ]; then
           STATUS="✅ 编译成功"
         else
           STATUS="❌ 编译失败"
         fi
+
+        # 2. 从 .config 中精确提取芯片架构或目标设备
         if [ -f openwrt/.config ]; then
           DEVICE=$(grep '^CONFIG_TARGET.*DEVICE.*=y' openwrt/.config | sed -r 's/.*DEVICE_(.*)=y/\1/')
           [ -z "$DEVICE" ] && DEVICE="未知设备"
         else
           DEVICE="未知设备"
         fi
+
+        # 3. 稳妥构造 Release 发布页面链接
+        FILE_DATE="${{ env.FILE_DATE }}"
         RELEASE_URL=""
-        if [ "${{ job.status }}" = "success" ]; then
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/OpenWrt_${{ env.FILE_DATE }}"
+        if [ "${{ job.status }}" = "success" ] && [ -n "$FILE_DATE" ]; then
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/OpenWrt_${FILE_DATE}"
         fi
-        # 使用变量拼接消息，完全避免 YAML 多行字符串缩进问题
-        MESSAGE="📢 *OpenWrt 自动编译通知*\n"
-        MESSAGE="${MESSAGE}⏰ 时间：$(date '+%Y-%m-%d %H:%M:%S')\n"
-        MESSAGE="${MESSAGE}🔧 状态：${STATUS}\n"
-        MESSAGE="${MESSAGE}📟 设备：${DEVICE}\n"
-        MESSAGE="${MESSAGE}📦 仓库：${{ github.repository }}\n"
-        MESSAGE="${MESSAGE}🔗 运行链接：${RUN_URL}\n"
+
+        # 4. 改用 HTML 标签构建消息（有效规避下划线造成的乱码或拒收风险）
+        MSG="📢 <b>OpenWrt 自动编译通知</b>\n"
+        MSG="${MSG}⏰ 时间：$(date '+%Y-%m-%d %H:%M:%S')\n"
+        MSG="${MSG}🔧 状态：${STATUS}\n"
+        MSG="${MSG}📟 设备：${DEVICE}\n"
+        MSG="${MSG}📦 仓库：${{ github.repository }}\n"
+        MSG="${MSG}🔗 运行链接：${RUN_URL}"
         if [ -n "$RELEASE_URL" ]; then
-          MESSAGE="${MESSAGE}📥 发布页面：${RELEASE_URL}\n"
+          MSG="${MSG}\n📥 发布页面：${RELEASE_URL}"
         fi
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-          -d chat_id="${TELEGRAM_CHAT_ID}" \
-          -d text="${MESSAGE}" \
-          -d parse_mode="Markdown" \
-          -d disable_web_page_preview="true"
+
+        # 5. 调用系统中早已安装的 jq，将消息整体打包为绝不出错的 JSON payload
+        JSON_PAYLOAD=$(jq -n \
+          --arg chat_id "${TELEGRAM_CHAT_ID}" \
+          --arg text "$MSG" \
+          --arg parse_mode "HTML" \
+          --argjson preview false \
+          '{chat_id: $chat_id, text: $text, parse_mode: $parse_mode, disable_web_page_preview: $preview}')
+
+        # 6. 使用 application/json 标准 POST 发送，并在控制台打印响应信息便于追踪
+        RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD")
+
+        echo "TG API Response: $RESPONSE"
