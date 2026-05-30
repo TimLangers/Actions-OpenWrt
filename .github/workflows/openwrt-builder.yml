@@ -99,7 +99,7 @@ jobs:
 
     - name: 🚀 发送编译开始通知 (Telegram)
       env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
         read -r -d '' MSG << 'EOF' || true
@@ -115,7 +115,7 @@ jobs:
         🔧 *源码分支*：${{ env.REPO_BRANCH }}
         🌿 *项目仓库*：${{ github.repository }}
 
-        编译进行中，请耐心等待\.\.\.
+        编译进行中，请耐心等待...
         EOF
 
         JSON_PAYLOAD=$(jq -n \
@@ -125,7 +125,7 @@ jobs:
           '{
             chat_id: $chat_id, 
             text: $text, 
-            parse_mode: "MarkdownV2", 
+            parse_mode: "Markdown", 
             disable_web_page_preview: $preview
           }')
 
@@ -252,7 +252,7 @@ jobs:
     - name: 1️⃣3️⃣ 发送编译结果通知 (Telegram)
       if: always()
       env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
@@ -263,9 +263,6 @@ jobs:
         else
           DEVICE="未知设备"
         fi
-        
-        # 安全转义设备名称中的下划线或特殊字符
-        DEVICE=$(echo "$DEVICE" | sed 's/_/\\_/g' | sed 's/-/\\-/g' | sed 's/\./\\./g')
 
         # 2. 根据状态进行分支通知组装
         if [ "${{ job.status }}" = "success" ]; then
@@ -278,7 +275,7 @@ jobs:
         📅 *完成时间*：$(date '+%Y-%m-%d %H:%M:%S')
         📟 *目标设备*：${DEVICE}
         📦 *项目仓库*：${{ github.repository }}
-        🌐 *管理地址*：10\.1\.1\.1
+        🌐 *管理地址*：10.1.1.1
         🔑 *默认密码*：无
 
         🔗 [点击直达下载发布页面](${RELEASE_URL})
@@ -306,7 +303,7 @@ jobs:
           '{
             chat_id: $chat_id, 
             text: $text, 
-            parse_mode: "MarkdownV2", 
+            parse_mode: "Markdown", 
             disable_web_page_preview: $preview
           }')
 
