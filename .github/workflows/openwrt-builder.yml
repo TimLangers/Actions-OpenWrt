@@ -47,6 +47,47 @@ jobs:
         sudo swapon /swapfile
         free -h
 
+    - name: 📊 收集服务器信息
+      run: |
+        echo "CPU_MODEL=$(cat /proc/cpuinfo | grep 'model name' | head -1 | cut -f2 -d: | sed 's/^[ \t]*//')" >> $GITHUB_ENV
+        echo "CPU_CORES=$(nproc)" >> $GITHUB_ENV
+
+    - name: 🚀 发送编译开始通知 (Telegram)
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        read -r -d '' MSG << EOF || true
+        🚀 *OpenWrt 自动编译开始* 🚀
+
+        📅 *时间*：$(date '+%Y-%m-%d %H:%M:%S')
+        🖥️ *编译服务器信息*：
+          • CPU：${{ env.CPU_MODEL }}
+          • 核心数：${{ env.CPU_CORES }}
+          • 磁盘使用：$(df -h / | awk 'NR==2 {print $4}') 可用
+
+        📦 *配置文件*：${{ env.CONFIG_FILE }}
+        🔧 *源码分支*：${{ env.REPO_BRANCH }}
+        🌿 *项目仓库*：${{ github.repository }}
+
+        编译进行中，请耐心等待...
+        EOF
+
+        JSON_PAYLOAD=$(jq -n \
+          --arg chat_id "${TELEGRAM_CHAT_ID}" \
+          --arg text "$MSG" \
+          --argjson preview false \
+          '{
+            chat_id: $chat_id, 
+            text: $text, 
+            parse_mode: "Markdown", 
+            disable_web_page_preview: $preview
+          }')
+
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD"
+
     - name: 4️⃣ 拉取 OpenWrt 源码
       working-directory: /workdir
       run: |
