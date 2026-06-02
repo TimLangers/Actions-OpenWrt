@@ -102,7 +102,7 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        read -r -d '' MSG << 'EOF' || true
+        read -r -d '' MSG << EOF || true
         🚀 *OpenWrt 自动编译开始* 🚀
 
         📅 *时间*：$(date '+%Y-%m-%d %H:%M:%S')
