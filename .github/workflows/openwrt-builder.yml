@@ -24,8 +24,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: ⏰ 准备编译时间标记
-      run: |
-        echo "FILE_DATE=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
+      run: echo "FILE_DATE=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
 
     - name: 2️⃣ 准备环境与清理磁盘
       env:
@@ -38,12 +37,15 @@ jobs:
         sudo -E apt-get -qq clean
         sudo mkdir -p /workdir && sudo chown $USER:$USER /workdir
 
-    - name: 3️⃣ 创建 Swap 分区
+    - name: 3️⃣ 创建 Swap 分区 (修复版)
       run: |
-        sudo fallocate -l 6G /swapfile
+        sudo swapoff -a || true
+        sudo rm -f /swapfile
+        sudo dd if=/dev/zero of=/swapfile bs=1M count=6144
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
+        free -h
 
     - name: 4️⃣ 拉取 OpenWrt 源码
       working-directory: /workdir
@@ -72,13 +74,13 @@ jobs:
     - name: 7️⃣ 核心编译步骤 (防报错优化)
       run: |
         cd openwrt
-        # 强制清理可能冲突的工具链缓存
+        # 强制清理工具链缓存，防止交叉编译污染
         make tools/libtool/clean
-        # 严格串行编译工具链
-        echo "编译工具链中..."
+        # 强制串行化执行工具构建，解决 Makefile 生成失败问题
+        echo "正在构建工具链..."
         make tools/install -j1
         make toolchain/install -j1
-        # 并行编译固件
+        # 工具链准备完毕，使用多线程编译 target
         echo "开始编译固件，并发线程数: $(nproc)"
         make -j$(nproc) || make -j1 V=s
 
