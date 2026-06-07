@@ -15,6 +15,9 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  # 统一 Telegram 变量
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
 jobs:
   build:
@@ -40,7 +43,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y ccache jq
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-        # (此处保留你原有的 CPU/内存信息打印逻辑...)
 
     - name: 4️⃣ 安装全量编译环境
       env:
@@ -63,8 +65,8 @@ jobs:
     - name: 6️⃣ 发送【编译开始】通知
       run: |
         MSG="🚀 <b>OpenWrt 编译开始</b>%0A📅 <b>时间</b>：$(date '+%Y-%m-%d %H:%M:%S')"
-        PAYLOAD=$(jq -n --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -H "Content-Type: application/json" -d "$PAYLOAD" || true
+        PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d "$PAYLOAD" || true
 
     - name: 7️⃣ 克隆与 DIY 准备
       run: |
@@ -88,8 +90,8 @@ jobs:
       run: |
         STATUS=$([[ "${{ steps.compile.outputs.status }}" == "success" ]] && echo "✅ 成功" || echo "❌ 失败")
         MSG="${STATUS}%0A📅 <b>时间</b>：$(date '+%Y-%m-%d %H:%M:%S')%0A🔗 <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>查看日志</a>"
-        PAYLOAD=$(jq -n --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
-        curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" -H "Content-Type: application/json" -d "$PAYLOAD" || true
+        PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d "$PAYLOAD" || true
 
     - name: 🔟 上传 Releases
       if: steps.compile.outputs.status == 'success'
