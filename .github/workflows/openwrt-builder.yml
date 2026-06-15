@@ -22,10 +22,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-    - name: 1️⃣ 拉取代码
+    - name: 1️⃣ 拉取仓库代码
       uses: actions/checkout@v4
 
-    - name: 2️⃣ 清理环境
+    - name: 2️⃣ 清理磁盘空间
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: true
@@ -44,7 +44,13 @@ jobs:
       run: |
         sudo -E apt-get -qq install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
 
-    - name: 5️⃣ 配置编译缓存
+    - name: 5️⃣ 强制清理并克隆代码
+      run: |
+        # 强制清理确保没有残留目录
+        [ -d "openwrt" ] && rm -rf openwrt
+        git clone $REPO_URL -b $REPO_BRANCH openwrt
+
+    - name: 6️⃣ 配置编译缓存
       uses: actions/cache@v4
       with:
         path: |
@@ -54,15 +60,8 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-openwrt-
 
-    - name: 6️⃣ 发送【开始】通知
+    - name: 7️⃣ 执行配置脚本
       run: |
-        MSG="🚀 <b>OpenWrt 编译开始</b>"
-        PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
-
-    - name: 7️⃣ 克隆与配置
-      run: |
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
         cd openwrt
         [ -e ../$FEEDS_CONF ] && cp ../$FEEDS_CONF feeds.conf.default
         chmod +x ../$DIY_P1_SH && ../$DIY_P1_SH
@@ -71,7 +70,13 @@ jobs:
         chmod +x ../$DIY_P2_SH && ../$DIY_P2_SH
         make defconfig
 
-    - name: 8️⃣ 编译固件
+    - name: 8️⃣ 发送【开始】通知
+      run: |
+        MSG="🚀 <b>OpenWrt 编译开始</b>"
+        PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
+        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
+
+    - name: 9️⃣ 编译固件
       id: compile
       run: |
         cd openwrt
@@ -79,7 +84,7 @@ jobs:
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 9️⃣ 发送【结果】通知
+    - name: 🔟 发送【结果】通知
       if: always()
       run: |
         STATUS=$([[ "${{ steps.compile.outputs.status }}" == "success" ]] && echo "✅ 成功" || echo "❌ 失败")
@@ -87,7 +92,7 @@ jobs:
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 🔟 上传 Releases
+    - name: 1️⃣1️⃣ 上传 Releases
       if: steps.compile.outputs.status == 'success'
       uses: softprops/action-gh-release@v2
       with:
