@@ -45,20 +45,33 @@ jobs:
 
     - name: 5️⃣ 准备配置
       run: |
-        cd openwrt
-        # 从 custom_repo 复制文件到 openwrt 目录内
-        cp ../custom_repo/${{ env.CONFIG_FILE }} .config
+        # 进入 openwrt 源码目录
+        cd $GITHUB_WORKSPACE/openwrt
         
-        # 处理 DIY 脚本
-        [ -f ../custom_repo/$DIY_P1_SH ] && cp ../custom_repo/$DIY_P1_SH . && chmod +x $DIY_P1_SH && ./$DIY_P1_SH
+        # 使用绝对路径复制配置文件
+        cp $GITHUB_WORKSPACE/OK2.config .config
+        
+        # 处理 DIY1 脚本
+        if [ -f "$GITHUB_WORKSPACE/$DIY_P1_SH" ]; then
+            cp $GITHUB_WORKSPACE/$DIY_P1_SH .
+            chmod +x $DIY_P1_SH
+            ./$DIY_P1_SH
+        fi
         
         # 验证平台配置
         grep "CONFIG_TARGET_x86_64=y" .config || (echo "错误: 配置未包含 x86_64" && exit 1)
         
+        # 更新 feeds
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         
-        [ -f ../custom_repo/$DIY_P2_SH ] && cp ../custom_repo/$DIY_P2_SH . && chmod +x $DIY_P2_SH && ./$DIY_P2_SH
+        # 处理 DIY2 脚本
+        if [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ]; then
+            cp $GITHUB_WORKSPACE/$DIY_P2_SH .
+            chmod +x $DIY_P2_SH
+            ./$DIY_P2_SH
+        fi
+        
         make defconfig
 
     - name: 6️⃣ 启用缓存
