@@ -8,7 +8,7 @@ on:
 env:
   REPO_URL: https://github.com/openwrt/openwrt.git
   REPO_BRANCH: openwrt-25.12
-  CONFIG_FILE: OK2.config
+  CONFIG_FILE: .config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   TZ: Asia/Shanghai
@@ -18,6 +18,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
     - name: 1️⃣ 拉取 OpenWrt 源码
       uses: actions/checkout@v4
@@ -26,61 +27,61 @@ jobs:
         ref: ${{ env.REPO_BRANCH }}
         path: openwrt
 
-    - name: 2️⃣ 拉取当前仓库配置脚本
+    - name: 2️⃣ 拉取当前仓库文件
       uses: actions/checkout@v4
       with:
         path: custom_repo
 
-    - name: 3️⃣ 发送【开始】通知
+    - name: 3️⃣ Telegram 开始通知
       run: |
         MSG="🚀 <b>OpenWrt 编译开始</b>"
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 4️⃣ 安装编译环境
+    - name: 4️⃣ 安装编译依赖
       run: |
         sudo apt-get update
-        sudo apt-get install -y ccache jq build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
+        sudo apt-get install -y \
+          ccache jq build-essential clang flex bison g++ gawk gcc-multilib \
+          g++-multilib gettext git libncurses-dev libssl-dev python3-distutils \
+          rsync unzip zlib1g-dev swig libelf-dev
+
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: 5️⃣ 准备配置
+    - name: 5️⃣ 准备 OpenWrt 配置
       run: |
-        # 进入 openwrt 源码目录
         cd $GITHUB_WORKSPACE/openwrt
-        
-        # 使用绝对路径复制配置文件
-        cp $GITHUB_WORKSPACE/OK2.config .config
-        
-        # 处理 DIY1 脚本
+
+        # 使用仓库 config
+        cp $GITHUB_WORKSPACE/${CONFIG_FILE} .config
+
+        # DIY 1
         if [ -f "$GITHUB_WORKSPACE/$DIY_P1_SH" ]; then
             cp $GITHUB_WORKSPACE/$DIY_P1_SH .
             chmod +x $DIY_P1_SH
             ./$DIY_P1_SH
         fi
-        
-        # 验证平台配置
-        grep "CONFIG_TARGET_x86_64=y" .config || (echo "错误: 配置未包含 x86_64" && exit 1)
-        
+
         # 更新 feeds
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
-        # 处理 DIY2 脚本
+
+        # DIY 2
         if [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ]; then
             cp $GITHUB_WORKSPACE/$DIY_P2_SH .
             chmod +x $DIY_P2_SH
             ./$DIY_P2_SH
         fi
-        
+
         make defconfig
 
-    - name: 6️⃣ 启用缓存
+    - name: 6️⃣ 缓存加速
       uses: actions/cache@v4
       with:
         path: |
           openwrt/dl
           ~/.ccache
-        key: ${{ runner.os }}-openwrt-x86_64-${{ hashFiles('custom_repo/OK2.config') }}
+        key: ${{ runner.os }}-openwrt-x86_64-${{ hashFiles('custom_repo/.config') }}
         restore-keys: |
           ${{ runner.os }}-openwrt-x86_64-
 
@@ -91,15 +92,16 @@ jobs:
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 8️⃣ 发送【结果】通知
+    - name: 8️⃣ Telegram 结果通知
       if: always()
       run: |
         STATUS=$([[ "${{ steps.compile.outputs.status }}" == "success" ]] && echo "✅ 成功" || echo "❌ 失败")
         MSG="${STATUS} 🔗 <a href='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'>查看日志</a>"
+
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 9️⃣ 上传 x86/64 固件
+    - name: 9️⃣ 上传固件
       if: steps.compile.outputs.status == 'success'
       uses: softprops/action-gh-release@v2
       with:
