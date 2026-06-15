@@ -26,10 +26,10 @@ jobs:
         ref: ${{ env.REPO_BRANCH }}
         path: openwrt
 
-    - name: 2️⃣ 拉取自定义配置仓库
+    - name: 2️⃣ 拉取当前仓库配置脚本
       uses: actions/checkout@v4
       with:
-        path: custom_config
+        path: custom_repo
 
     - name: 3️⃣ 发送【开始】通知
       run: |
@@ -37,7 +37,7 @@ jobs:
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 4️⃣ 清理磁盘与配置环境
+    - name: 4️⃣ 安装编译环境
       run: |
         sudo apt-get update
         sudo apt-get install -y ccache jq build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
@@ -46,12 +46,19 @@ jobs:
     - name: 5️⃣ 准备配置
       run: |
         cd openwrt
-        cp ../custom_config/${{ env.CONFIG_FILE }} .config
-        [ -e ../custom_config/$DIY_P1_SH ] && cp ../custom_config/$DIY_P1_SH . && chmod +x $DIY_P1_SH && ./$DIY_P1_SH
+        # 从 custom_repo 复制文件到 openwrt 目录内
+        cp ../custom_repo/${{ env.CONFIG_FILE }} .config
+        
+        # 处理 DIY 脚本
+        [ -f ../custom_repo/$DIY_P1_SH ] && cp ../custom_repo/$DIY_P1_SH . && chmod +x $DIY_P1_SH && ./$DIY_P1_SH
+        
+        # 验证平台配置
         grep "CONFIG_TARGET_x86_64=y" .config || (echo "错误: 配置未包含 x86_64" && exit 1)
+        
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        [ -e ../custom_config/$DIY_P2_SH ] && cp ../custom_config/$DIY_P2_SH . && chmod +x $DIY_P2_SH && ./$DIY_P2_SH
+        
+        [ -f ../custom_repo/$DIY_P2_SH ] && cp ../custom_repo/$DIY_P2_SH . && chmod +x $DIY_P2_SH && ./$DIY_P2_SH
         make defconfig
 
     - name: 6️⃣ 启用缓存
@@ -60,7 +67,7 @@ jobs:
         path: |
           openwrt/dl
           ~/.ccache
-        key: ${{ runner.os }}-openwrt-x86_64-${{ hashFiles('custom_config/OK2.config') }}
+        key: ${{ runner.os }}-openwrt-x86_64-${{ hashFiles('custom_repo/OK2.config') }}
         restore-keys: |
           ${{ runner.os }}-openwrt-x86_64-
 
