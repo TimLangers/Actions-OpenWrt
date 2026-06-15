@@ -1,4 +1,4 @@
-name: OpenWrt-合集版 (缓存加速优化版)
+name: OpenWrt-x86_64-Build
 
 on:
   workflow_dispatch:
@@ -8,12 +8,9 @@ on:
 env:
   REPO_URL: https://github.com/openwrt/openwrt.git
   REPO_BRANCH: openwrt-25.12
-  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: OK2.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -22,69 +19,59 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-    - name: 1️⃣ 拉取仓库代码
+    - name: 1️⃣ 拉取 OpenWrt 源码
       uses: actions/checkout@v4
-
-    - name: 2️⃣ 清理磁盘空间
-      uses: jlumbroso/free-disk-space@main
       with:
-        tool-cache: true
-        android: true
-        dotnet: true
-        large-packages: true
+        repository: openwrt/openwrt
+        ref: ${{ env.REPO_BRANCH }}
+        path: openwrt
 
-    - name: 3️⃣ 配置环境与 ccache
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ccache jq
-        echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-        echo "USE_CCACHE=1" >> $GITHUB_ENV
-
-    - name: 4️⃣ 安装依赖
-      run: |
-        sudo -E apt-get -qq install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
-
-    - name: 5️⃣ 强制清理并克隆代码
-      run: |
-        # 强制清理确保没有残留目录
-        [ -d "openwrt" ] && rm -rf openwrt
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-
-    - name: 6️⃣ 配置编译缓存
-      uses: actions/cache@v4
+    - name: 2️⃣ 拉取自定义配置仓库
+      uses: actions/checkout@v4
       with:
-        path: |
-          openwrt/dl
-          ~/.ccache
-        key: ${{ runner.os }}-openwrt-${{ hashFiles('**/OK2.config') }}
-        restore-keys: |
-          ${{ runner.os }}-openwrt-
+        path: custom_config
 
-    - name: 7️⃣ 执行配置脚本
-      run: |
-        cd openwrt
-        [ -e ../$FEEDS_CONF ] && cp ../$FEEDS_CONF feeds.conf.default
-        chmod +x ../$DIY_P1_SH && ../$DIY_P1_SH
-        ./scripts/feeds update -a && ./scripts/feeds install -a
-        [ -e ../$CONFIG_FILE ] && cp ../$CONFIG_FILE .config
-        chmod +x ../$DIY_P2_SH && ../$DIY_P2_SH
-        make defconfig
-
-    - name: 8️⃣ 发送【开始】通知
+    - name: 3️⃣ 发送【开始】通知
       run: |
         MSG="🚀 <b>OpenWrt 编译开始</b>"
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 9️⃣ 编译固件
+    - name: 4️⃣ 清理磁盘与配置环境
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ccache jq build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
+        echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+    - name: 5️⃣ 准备配置
+      run: |
+        cd openwrt
+        cp ../custom_config/${{ env.CONFIG_FILE }} .config
+        [ -e ../custom_config/$DIY_P1_SH ] && cp ../custom_config/$DIY_P1_SH . && chmod +x $DIY_P1_SH && ./$DIY_P1_SH
+        grep "CONFIG_TARGET_x86_64=y" .config || (echo "错误: 配置未包含 x86_64" && exit 1)
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        [ -e ../custom_config/$DIY_P2_SH ] && cp ../custom_config/$DIY_P2_SH . && chmod +x $DIY_P2_SH && ./$DIY_P2_SH
+        make defconfig
+
+    - name: 6️⃣ 启用缓存
+      uses: actions/cache@v4
+      with:
+        path: |
+          openwrt/dl
+          ~/.ccache
+        key: ${{ runner.os }}-openwrt-x86_64-${{ hashFiles('custom_config/OK2.config') }}
+        restore-keys: |
+          ${{ runner.os }}-openwrt-x86_64-
+
+    - name: 7️⃣ 编译固件
       id: compile
       run: |
         cd openwrt
-        echo "$(nproc) 线程编译中..."
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 🔟 发送【结果】通知
+    - name: 8️⃣ 发送【结果】通知
       if: always()
       run: |
         STATUS=$([[ "${{ steps.compile.outputs.status }}" == "success" ]] && echo "✅ 成功" || echo "❌ 失败")
@@ -92,9 +79,9 @@ jobs:
         PAYLOAD=$(jq -n --arg chat_id "${TELEGRAM_CHAT_ID}" --arg text "$MSG" '{chat_id: $chat_id, text: $text, parse_mode: "HTML"}')
         curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -d "$PAYLOAD" || true
 
-    - name: 1️⃣1️⃣ 上传 Releases
+    - name: 9️⃣ 上传 x86/64 固件
       if: steps.compile.outputs.status == 'success'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: OpenWrt_${{ env.FILE_DATE }}
-        files: openwrt/bin/targets/*/*/*.{img.gz,img,bin}
+        tag_name: OpenWrt_x86_64_${{ env.FILE_DATE }}
+        files: openwrt/bin/targets/x86/64/*-generic-squashfs-combined-efi.img.gz
