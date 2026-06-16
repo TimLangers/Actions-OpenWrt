@@ -31,7 +31,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gettext git \
-            libncurses-dev libssl-dev rsync unzip zlib1g-dev swig libelf-dev ccache jq
+            libncurses-dev libssl-dev rsync unzip zlib1g-dev swig libelf-dev ccache jq \
+            ruby csstidy luarocks
+          # 安装 luasrcdiet（通过 luarocks）
+          sudo luarocks install luasrcdiet || true
           echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
       - name: 4️⃣ Cache
@@ -61,20 +64,22 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/custom_repo/.config .config
-          # 强制启用缺失的依赖包，消除所有 WARNING
-          ./scripts/config -e PACKAGE_libpam \
-                           -e PACKAGE_libtirpc \
-                           -e PACKAGE_liblzma \
-                           -e PACKAGE_libnetsnmp \
-                           -e PACKAGE_libev \
-                           -e PACKAGE_ruby \
-                           -e PACKAGE_ruby-yaml \
-                           -e PACKAGE_csstidy \
-                           -e PACKAGE_luasrcdiet \
-                           -e PACKAGE_bash \
-                           -e PACKAGE_curl \
-                           -e PACKAGE_unzip \
-                           -e PACKAGE_wget
+          # 用 echo 追加缺失的依赖包配置（消除所有 WARNING）
+          cat >> .config <<'EOF'
+          CONFIG_PACKAGE_libpam=y
+          CONFIG_PACKAGE_libtirpc=y
+          CONFIG_PACKAGE_liblzma=y
+          CONFIG_PACKAGE_libnetsnmp=y
+          CONFIG_PACKAGE_libev=y
+          CONFIG_PACKAGE_ruby=y
+          CONFIG_PACKAGE_ruby-yaml=y
+          CONFIG_PACKAGE_csstidy=y
+          CONFIG_PACKAGE_luasrcdiet=y
+          CONFIG_PACKAGE_bash=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_unzip=y
+          CONFIG_PACKAGE_wget=y
+          EOF
           bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
           make defconfig
 
