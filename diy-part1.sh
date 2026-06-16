@@ -14,7 +14,7 @@ echo "src-git openclash https://github.com/vernesong/OpenClash" >> feeds.conf.de
 
 # 4. 换用更兼容的 Argon 源 (注意：这里直接使用官方推荐或分支更稳定的地址)
 # 如果你之前的地址有问题，请尝试换成下面的写法
-echo "src-git luci_theme_argon https://github.com/jerrykuku/luci-theme-argon.git" >> feeds.conf.default
-echo "src-git luci_app_argon_config https://github.com/jerrykuku/luci-app-argon-config.git" >> feeds.conf.default
+# echo "src-git luci_theme_argon https://github.com/jerrykuku/luci-theme-argon.git" >> feeds.conf.default
+# echo "src-git luci_app_argon_config https://github.com/jerrykuku/luci-app-argon-config.git" >> feeds.conf.default
 
 echo "==== diy-part1.sh finished successfully ===="
