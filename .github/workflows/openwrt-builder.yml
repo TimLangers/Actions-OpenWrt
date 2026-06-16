@@ -15,14 +15,14 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: 1️⃣ 拉取 OpenWrt
+      - name: 1️⃣ 拉取 OpenWrt 源码
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
           ref: openwrt-25.12
           path: openwrt
 
-      - name: 2️⃣ 拉取自定义文件
+      - name: 2️⃣ 拉取自定义配置
         uses: actions/checkout@v4
         with:
           path: custom_repo
@@ -34,21 +34,28 @@ jobs:
             libncurses-dev libssl-dev rsync unzip zlib1g-dev swig libelf-dev ccache jq
           echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-      - name: 4️⃣ 配置编译环境
+      - name: 4️⃣ 配置编译环境（强制清理与更新）
         run: |
           cd openwrt
-          # 清除可能冲突的预安装插件
-          rm -rf package/luci-app-openclash package/luci-theme-argon package/luci-app-argon-config
-          # 执行 diy-part1 (添加 src-git 源)
+          # 彻底清除缓存，解决 index missing 和 target pattern 报错
+          rm -rf tmp/
+          rm -rf feeds/
+          
+          # 执行 diy-part1.sh (添加自定义 feed 源)
           bash $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
-          # 更新并安装所有 feeds
+          
+          # 更新所有包列表
           ./scripts/feeds update -a
+          # 重新构建包索引
           ./scripts/feeds install -a
-          # 加载配置文件
+          
+          # 加载配置
           cp $GITHUB_WORKSPACE/custom_repo/.config .config
-          # 执行 diy-part2 (自定义修改)
+          
+          # 执行 diy-part2.sh (如有必要)
           bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
-          # 自动修复配置中的依赖关系（最关键步骤）
+          
+          # 自动修复配置并补全缺失依赖
           make defconfig
 
       - name: 5️⃣ 编译固件
