@@ -1,21 +1,27 @@
 #!/bin/bash
 
+echo "==== applying clean system defaults ===="
+
 mkdir -p package/base-files/files/etc/uci-defaults
 
-cat > package/base-files/files/etc/uci-defaults/99-custom-settings <<'EOF'
+cat > package/base-files/files/etc/uci-defaults/99-clean <<'EOF'
 #!/bin/sh
 
-# 默认中文（25.x 正确写法）
+# ===== language =====
 uci set luci.main.lang='zh_Hans'
 
-# 默认 Argon 主题（关键修复）
+# ===== theme =====
 uci set luci.main.mediaurlbase='/luci-static/argon'
+uci set luci.main.media='/luci-static/argon'
 
 uci commit luci
+
+# 清 LuCI 缓存（防止首次英文）
+rm -rf /tmp/luci-*
 
 exit 0
 EOF
 
-chmod +x package/base-files/files/etc/uci-defaults/99-custom-settings
+chmod +x package/base-files/files/etc/uci-defaults/99-clean
 
-echo "uci defaults set"
+echo "==== diy-part2 done ===="
