@@ -37,7 +37,6 @@ jobs:
           ccache jq build-essential clang flex bison g++ gawk \
           gcc-multilib g++-multilib gettext git libncurses-dev \
           libssl-dev python3-distutils rsync unzip zlib1g-dev swig libelf-dev
-
         echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
     - name: 4️⃣ Cache DL + CCache
@@ -59,28 +58,21 @@ jobs:
     - name: 6️⃣ 准备配置
       run: |
         cd $GITHUB_WORKSPACE/openwrt
-
-        # config
-        cp $GITHUB_WORKSPACE/custom_repo/.config .config
-
-        # DIY1
-        if [ -f "$GITHUB_WORKSPACE/custom_repo/diy-part1.sh" ]; then
-          cp $GITHUB_WORKSPACE/custom_repo/diy-part1.sh .
-          chmod +x diy-part1.sh
-          ./diy-part1.sh
-        fi
-
-        # feeds
+        
+        # 1. 运行 DIY1 添加第三方源
+        bash $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
+        
+        # 2. 更新并安装所有 feeds
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-
-        # DIY2
-        if [ -f "$GITHUB_WORKSPACE/custom_repo/diy-part2.sh" ]; then
-          cp $GITHUB_WORKSPACE/custom_repo/diy-part2.sh .
-          chmod +x diy-part2.sh
-          ./diy-part2.sh
-        fi
-
+        
+        # 3. 复制你的基础配置
+        cp $GITHUB_WORKSPACE/custom_repo/.config .config
+        
+        # 4. 运行 DIY2 执行强行注入和修正
+        bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
+        
+        # 5. 生成最终配置 (自动补全依赖)
         make defconfig
 
     - name: 7️⃣ 编译（x86_64优化）
