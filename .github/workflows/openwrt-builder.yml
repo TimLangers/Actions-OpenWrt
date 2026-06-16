@@ -61,6 +61,20 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           cp $GITHUB_WORKSPACE/custom_repo/.config .config
+          # 强制启用缺失的依赖包，消除所有 WARNING
+          ./scripts/config -e PACKAGE_libpam \
+                           -e PACKAGE_libtirpc \
+                           -e PACKAGE_liblzma \
+                           -e PACKAGE_libnetsnmp \
+                           -e PACKAGE_libev \
+                           -e PACKAGE_ruby \
+                           -e PACKAGE_ruby-yaml \
+                           -e PACKAGE_csstidy \
+                           -e PACKAGE_luasrcdiet \
+                           -e PACKAGE_bash \
+                           -e PACKAGE_curl \
+                           -e PACKAGE_unzip \
+                           -e PACKAGE_wget
           bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
           make defconfig
 
