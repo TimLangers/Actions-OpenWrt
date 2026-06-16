@@ -1,10 +1,20 @@
 #!/bin/bash
 
+# ========================================================
+# diy-part1.sh（稳定版：避免 feed index 问题）
+# ========================================================
+
 export GIT_SSL_NO_VERIFY=true
 
-echo 'src-git openclash https://github.com/vernesong/OpenClash.git' >> feeds.conf.default
+echo "==== Cloning extra packages directly ===="
 
-echo 'src-git argon https://github.com/jerrykuku/luci-theme-argon.git' >> feeds.conf.default
-echo 'src-git argonconfig https://github.com/jerrykuku/luci-app-argon-config.git' >> feeds.conf.default
+# OpenClash
+git clone --depth=1 https://github.com/vernesong/OpenClash.git package/openclash
 
-echo "feeds added"
+# Argon 主题
+git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+
+# Argon 配置
+git clone --depth=1 https://github.com/jerrykuku/luci-app-argon-config.git package/luci-app-argon-config
+
+echo "==== diy-part1 done ===="
