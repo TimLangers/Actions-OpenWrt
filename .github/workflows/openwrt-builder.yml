@@ -15,92 +15,79 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: 1️⃣ 拉取 OpenWrt
-      uses: actions/checkout@v4
-      with:
-        repository: openwrt/openwrt
-        ref: openwrt-25.12
-        path: openwrt
+      - name: 1️⃣ 拉取 OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: openwrt-25.12
+          path: openwrt
 
-    - name: 2️⃣ 拉取自定义文件
-      uses: actions/checkout@v4
-      with:
-        path: custom_repo
+      - name: 2️⃣ 拉取自定义文件
+        uses: actions/checkout@v4
+        with:
+          path: custom_repo
 
-    - name: 3️⃣ 安装依赖
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential clang flex bison g++ gawk gettext git \
-          libncurses-dev libssl-dev rsync unzip zlib1g-dev swig libelf-dev ccache jq
+      - name: 3️⃣ 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gettext git \
+            libncurses-dev libssl-dev rsync unzip zlib1g-dev swig libelf-dev ccache jq
+          echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-        echo "FILE_DATE=$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
+      - name: 4️⃣ Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            ~/.ccache
+            openwrt/staging_dir
+          key: openwrt-clean-25.12-${{ hashFiles('custom_repo/.config') }}
 
-    - name: 4️⃣ Cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          openwrt/dl
-          ~/.ccache
-          openwrt/staging_dir
-        key: openwrt-clean-25.12-${{ hashFiles('custom_repo/.config') }}
+      - name: 5️⃣ ccache
+        run: |
+          ccache -M 5G
+          ccache -z
 
-    - name: 5️⃣ ccache
-      run: |
-        ccache -M 5G
-        ccache -z
+      - name: 6️⃣ Telegram start
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="🚀 OpenWrt 25.12 CLEAN BUILD 开始"
 
-    - name: 6️⃣ Telegram start
-      run: |
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TELEGRAM_CHAT_ID}" \
-        -d text="🚀 OpenWrt 25.12 CLEAN BUILD 开始"
+      - name: 7️⃣ 准备编译
+        run: |
+          cd openwrt
+          bash $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          cp $GITHUB_WORKSPACE/custom_repo/.config .config
+          bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
+          make defconfig
 
-    - name: 7️⃣ 准备编译
-      run: |
-        cd openwrt
+      - name: 8️⃣ 编译固件
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
 
-        # 执行自定义脚本（已改为 git clone 方式）
-        bash $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
+      - name: 9️⃣ 输出文件
+        run: |
+          ls -lh openwrt/bin/targets/x86/64/
 
-        # 官方 feeds
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: 🔟 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: CLEAN_25.12_${{ env.FILE_DATE }}
+          files: openwrt/bin/targets/x86/64/*combined-efi.img.gz
 
-        # 复制配置
-        cp $GITHUB_WORKSPACE/custom_repo/.config .config
-
-        # 生成uci默认设置
-        bash $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
-
-        # 防止配置丢失
-        make defconfig
-
-    - name: 8️⃣ 编译固件
-      run: |
-        cd openwrt
-        make -j$(nproc) || make -j1 V=s
-
-    - name: 9️⃣ 输出文件
-      run: |
-        ls -lh openwrt/bin/targets/x86/64/
-
-    - name: 🔟 Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: CLEAN_25.12_${{ env.FILE_DATE }}
-        files: openwrt/bin/targets/x86/64/*combined-efi.img.gz
-
-    - name: 1️⃣1️⃣ Telegram 完成通知
-      if: always()
-      run: |
-        STATUS=$([[ "${{ job.status }}" == "success" ]] && echo "成功" || echo "失败")
-
-        FILE=$(ls openwrt/bin/targets/x86/64/*combined-efi.img.gz 2>/dev/null || echo "无文件")
-
-        curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TELEGRAM_CHAT_ID}" \
-        -d text="📦 OpenWrt CLEAN BUILD 完成
-
-状态：$STATUS
-文件：$FILE
-时间：${{ env.FILE_DATE }}"
+      - name: 1️⃣1️⃣ Telegram 完成通知
+        if: always()
+        run: |
+          STATUS=$([[ "${{ job.status }}" == "success" ]] && echo "成功" || echo "失败")
+          FILE=$(ls openwrt/bin/targets/x86/64/*combined-efi.img.gz 2>/dev/null || echo "无文件")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          -d chat_id="${TELEGRAM_CHAT_ID}" \
+          -d text="📦 OpenWrt CLEAN BUILD 完成
+          
+          状态：$STATUS
+          文件：$FILE
+          时间：${{ env.FILE_DATE }}"
