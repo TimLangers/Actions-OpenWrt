@@ -24,4 +24,4 @@ EOF
 
 chmod +x package/base-files/files/etc/uci-defaults/99-clean
 
-echo "==== diy-part2 done ===="
+echo "==== diy-part2.sh done ===="
