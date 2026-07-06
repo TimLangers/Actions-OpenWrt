@@ -7,17 +7,18 @@ mkdir -p package/base-files/files/etc/uci-defaults
 cat > package/base-files/files/etc/uci-defaults/99-clean <<'EOF'
 #!/bin/sh
 
-# ===== language =====
+# ===== 默认语言 =====
 uci set luci.main.lang='zh_Hans'
 
-# ===== theme =====
+# ===== 默认主题 =====
 uci set luci.main.mediaurlbase='/luci-static/argon'
-uci set luci.main.media='/luci-static/argon'
 
+# 提交配置
 uci commit luci
 
-# 清 LuCI 缓存（防止首次英文）
+# 强力清理 LuCI 缓存与索引（确保首次登录直接应用中文和新主题）
 rm -rf /tmp/luci-*
+rm -rf /tmp/luci-indexcache
 
 exit 0
 EOF
