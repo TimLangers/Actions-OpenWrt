@@ -36,8 +36,7 @@ jobs:
           cd openwrt
           rm -rf tmp/ feeds/
 
-          # 注意：feeds.conf.default 完全由 diy-part1.sh 生成，此处不再覆盖
-          # 直接执行 diy-part1.sh（已包含所有源：基础 + OpenClash + Argon）
+          # 执行 diy-part1.sh 生成 feeds.conf.default
           chmod +x $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
           $GITHUB_WORKSPACE/custom_repo/diy-part1.sh
 
@@ -53,8 +52,12 @@ jobs:
 
           ./scripts/feeds install -a
 
-          # 复制自定义 .config（确保干净）
+          # 复制自定义 .config
           cp $GITHUB_WORKSPACE/custom_repo/.config .config
+
+          # 执行 diy-part2.sh（注入开机默认中文、Argon 主题和缓存清理逻辑）
+          chmod +x $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
+          $GITHUB_WORKSPACE/custom_repo/diy-part2.sh
 
           # 强制确保 OpenClash 被选中（双重保险）
           echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
